@@ -149,3 +149,11 @@ variable "azurerm_subnet_network_security_group_association" {
   }))
   default = {}
 }
+
+variable "subscription_id" {
+  type = string
+}
+
+variable "backend_configution" {
+  type = map(string)
+}
