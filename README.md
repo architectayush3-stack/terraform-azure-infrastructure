@@ -1,8 +1,3 @@
-# terraform-azure-infrastructure
-Production-ready Azure infrastructure provisioned using Terraform with reusable modules and Dev/Prod environment separation.
-
-==============================================================================================================================================================
-
 # Terraform Azure Infrastructure
 
 ![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5.0-7B42BC?logo=terraform&logoColor=white)
