@@ -3,79 +3,152 @@ Production-ready Azure infrastructure provisioned using Terraform with reusable 
 
 ==============================================================================================================================================================
 
-Enterprise-grade, modular Infrastructure as Code (IaC) setup for deploying scalable, secure, and resilient workloads on Microsoft Azure. Built using reusable modules with complete environment parity across `dev` and `prod`.
+# Terraform Azure Infrastructure
+
+![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5.0-7B42BC?logo=terraform&logoColor=white)
+![Azure](https://img.shields.io/badge/Microsoft%20Azure-0078D4?logo=microsoftazure&logoColor=white)
+![License](https://img.shields.io/badge/License-MPL--2.0-brightgreen)
+
+Modular, reusable **Infrastructure as Code (IaC)** for deploying secure and scalable workloads on **Microsoft Azure**, with clean **Dev / Prod environment separation**, remote state, and a security-first design.
 
 ---
 
-## Architecture Overview
+## Table of Contents
 
-                  +-----------------------------+
-                  |      Azure Virtual WAN      |
-                  |    Hub & Spoke / VNet       |
-                  +--------------+--------------+
-                                 |
-         +-----------------------+-----------------------+
-         |                                               |
-         v                                               v
-+-----------------+                             +-----------------+
-|   Dev Spoke     |                             |   Prod Spoke    |
-| - App Subnet    |                             | - App Subnet    |
-| - DB Subnet     |                             | - DB Subnet     |
-| - NSG / Bastion |                             | - Private Link  |
-+-----------------+                             +-----------------+
+- [Highlights](#highlights)
+- [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
+- [Modules](#modules)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Environment Comparison](#environment-comparison)
+- [Security Practices](#security-practices)
+- [Contributing](#contributing)
+- [License](#license)
 
-### Core Features
+---
 
-- **Multi-Environment Architecture:** Dedicated directory isolation between `dev` and `prod` with independent state files and `.tfvars`.
-- **Reusable Core Modules:** Parameterized modules for Networking, Compute, Database, and Security.
-- **Security-First Approach:** Default private endpoints, strict Network Security Group (NSG) rules, zero public IP exposure for databases, and Azure Key Vault integration.
-- **Remote State Locking:** Integrated with Azure Blob Storage backend using Blob Leases to prevent concurrent deployment drift.
+## Highlights
+
+- **Multi-environment layout**: separate `dev` and `prod` root configurations, each with its own state file and `.tfvars`.
+- **Reusable modules**: parameterized building blocks for Networking, Compute, Database, and Security.
+- **Security-first**: private endpoints, strict NSG rules, no public IPs on databases, secrets in Azure Key Vault, Managed Identity instead of hardcoded credentials.
+- **Remote state with locking**: Azure Blob Storage backend, using blob leases to prevent concurrent applies.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+    HUB["Hub VNet<br/>(shared services)"]
+
+    subgraph DEV["Dev Spoke"]
+        D_APP["App Subnet"]
+        D_DB["DB Subnet"]
+        D_NSG["NSG / Bastion"]
+    end
+
+    subgraph PROD["Prod Spoke"]
+        P_APP["App Subnet"]
+        P_DB["DB Subnet"]
+        P_PL["Private Link"]
+    end
+
+    HUB --> DEV
+    HUB --> PROD
+```
+
+### Module data flow
+
+```mermaid
+flowchart LR
+    NET["networking"] -- "subnet_ids, vnet_id" --> COMP["compute"]
+    NET -- "db_subnet_id" --> DB["database"]
+    SEC["security<br/>(Key Vault)"] -- "Managed Identity" --> COMP
+    DB -- "stores secrets" --> SEC
+```
 
 ---
 
 ## Repository Structure
 
-```text
+```
 .
-├── modules/                      # Reusable modules (building blocks)
-│   ├── networking/               # VNet, Subnets, Route Tables, NSGs
-│   ├── compute/                  # Virtual Machines, Scale Sets, or AKS
-│   ├── database/                 # Azure Database (SQL / PostgreSQL Flexible Server)
-│   └── security/                 # Key Vault, Secrets, Managed Identities
+├── modules/
+│   ├── networking/     # VNet, Subnets, Route Tables, NSGs
+│   ├── compute/        # Virtual Machines / VMSS / AKS
+│   ├── database/       # Azure SQL / PostgreSQL Flexible Server
+│   └── security/       # Key Vault, Secrets, Managed Identities
 │
-├── environments/                 # Root configurations per environment
+├── env/
 │   ├── dev/
-│   │   ├── main.tf               # Module invocations for dev
-│   │   ├── variables.tf          # Input variable declarations
-│   │   ├── outputs.tf            # Exported endpoints & IDs
-│   │   ├── terraform.tfvars      # Dev-specific variable values
-│   │   └── backend.tf            # Dev remote state configuration
-│   └── prod/
-│       ├── main.tf               # Module invocations for prod (HA/SLA focus)
-│       ├── variables.tf
-│       ├── outputs.tf
-│       ├── terraform.tfvars      # Production SKUs & sizing
-│       └── backend.tf            # Prod remote state configuration
+│   │   ├── main.tf             # Module calls for dev
+│   │   ├── variables.tf        # Input variables
+│   │   ├── outputs.tf          # Exported IDs & endpoints
+│   │   ├── terraform.tfvars    # Dev values
+│   │   └── backend.tf          # Remote state config
+│   └── prod/                   # Same layout, production SKUs & HA settings
 │
 ├── .gitignore
+├── LICENSE
 └── README.md
-Deep Dive: How the Modules WorkInfrastructure logic is broken into isolated, plug-and-play modules inside modules/. Each module accepts standard input variables and exposes outputs that downstream modules consume.1. modules/networkingKaam: Poora network topology provision karta hai.Components: Virtual Network (VNet), application/database subnets, Network Security Groups (NSGs), aur Route Tables.Inter-module Connection: Yeh module subnet_ids aur vnet_id output karta hai, jise compute aur database modules consumption ke liye use karte hain.2. modules/computeKaam: Virtual Machines, Scale Sets (VMSS), ya AKS clusters launch karta hai.Workflow:networking module se app_subnet_id leta hai.Compute instances ko launch karke security module ke through Managed Identity assign karta hai taaki direct secrets hardcode na karne padein.3. modules/databaseKaam: Managed database instances (e.g., Azure PostgreSQL Flexible Server ya Azure SQL) provision karta hai.Private Access: Database ko public internet se block rakha jata hai aur networking module ke db_subnet_id me Private Endpoint / VNet Integration ke sath attach kiya jata hai.4. modules/securityKaam: Azure Key Vault, Access Policies/RBAC, aur secrets management handle karta hai.Workflow: Database passwords, TLS certificates, aur sensitive tokens yahan automatically generate ya store hote hain, jise compute layers bina code exposure ke retrieve kar sakti hain.Module Data Flow[ networking ] ----( subnet_ids )----+----> [ compute ]
-                                     |           |
-                                     |      ( Managed ID )
-                                     v           v
-                                [ database ] <---+----> [ security (Key Vault) ]
-                                      ^                      |
-                                      +---( stores secrets )-+
-PrerequisitesTerraform CLI (>= 1.5.0)Azure CLI (>= 2.50.0)Active Azure Subscription with Owner or Contributor roleQuick Start1. Azure AuthenticationLogin to Azure and select your subscription:Bashaz login
+```
+
+---
+
+## Modules
+
+Each module is self-contained: it takes input variables and exposes outputs that other modules consume.
+
+| Module | Purpose | Key outputs |
+|--------|---------|-------------|
+| `networking` | VNet, application/database subnets, NSGs, route tables | `vnet_id`, `subnet_ids` |
+| `compute` | Virtual Machines, VMSS, or AKS; attaches a Managed Identity so no secrets are hardcoded | instance / cluster IDs |
+| `database` | Azure SQL or PostgreSQL Flexible Server, kept off the public internet via Private Endpoint / VNet integration | server FQDN, ID |
+| `security` | Key Vault, access policies / RBAC, secrets and certificates | `key_vault_id`, identity IDs |
+
+---
+
+## Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) `>= 1.5.0`
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) `>= 2.50.0`
+- An Azure subscription with **Contributor** or **Owner** access
+
+---
+
+## Quick Start
+
+### 1. Authenticate with Azure
+
+```bash
+az login
 az account set --subscription "<YOUR_SUBSCRIPTION_ID>"
-2. Configure Remote BackendCreate an Azure Storage Account to store your .tfstate files:BashRESOURCE_GROUP="rg-terraform-tfstate"
+```
+
+### 2. Create the remote state backend
+
+```bash
+RESOURCE_GROUP="rg-terraform-tfstate"
 STORAGE_ACCOUNT="tfstate$(openssl rand -hex 4)"
 CONTAINER_NAME="tfstate"
 
 az group create --name $RESOURCE_GROUP --location centralindia
-az storage account create --name $STORAGE_ACCOUNT --resource-group $RESOURCE_GROUP --sku Standard_LRS --encryption-services blob
-az storage container create --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT
-Update environments/<target>/backend.tf with your storage values:Terraformterraform {
+az storage account create \
+  --name $STORAGE_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --sku Standard_LRS \
+  --encryption-services blob
+az storage container create \
+  --name $CONTAINER_NAME \
+  --account-name $STORAGE_ACCOUNT
+```
+
+Then update `env/<target>/backend.tf`:
+
+```hcl
+terraform {
   backend "azurerm" {
     resource_group_name  = "rg-terraform-tfstate"
     storage_account_name = "<STORAGE_ACCOUNT_NAME>"
@@ -83,17 +156,64 @@ Update environments/<target>/backend.tf with your storage values:Terraformterraf
     key                  = "terraform.<env>.tfstate"
   }
 }
-3. Deploy InfrastructureNavigate to the target environment directory:Bashcd environments/dev
+```
 
-# 1. Initialize providers & backend
-terraform init
+### 3. Deploy
 
-# 2. Check configuration syntax
-terraform validate
+```bash
+cd env/dev
 
-# 3. Preview resource changes
-terraform plan -var-file="terraform.tfvars"
-
-# 4. Apply changes
+terraform init        # initialize providers & backend
+terraform validate    # check configuration
+terraform plan  -var-file="terraform.tfvars"
 terraform apply -var-file="terraform.tfvars"
-Environment ComparisonDimensionDevelopment (dev)Production (prod)High AvailabilitySingle zone, standard storageMulti-zone redundancy (ZRS), Premium SSDCompute SizingBurstable instances (e.g., Standard_B2s)Compute/Memory optimized (e.g., Standard_D4s_v5)Data ProtectionSoft delete enabled, short retentionAutomated geo-redundant backups, 30-day retentionNetwork SecurityOptional bastion/jump hostStrict private endpoints & Hub-Spoke isolationContributing & Best PracticesRun terraform fmt -recursive before creating a pull request.Ensure terraform validate runs cleanly inside both dev/ and prod/.Keep all modules fully parameterized—never hardcode resource IDs, subscription IDs, or IP CIDRs directly inside modules/.
+```
+
+### 4. Clean up
+
+```bash
+terraform destroy -var-file="terraform.tfvars"
+```
+
+---
+
+## Environment Comparison
+
+| Dimension | Dev | Prod |
+|-----------|-----|------|
+| High availability | Single zone, standard storage | Multi-zone (ZRS), Premium SSD |
+| Compute sizing | Burstable (e.g. `Standard_B2s`) | Optimized (e.g. `Standard_D4s_v5`) |
+| Data protection | Soft delete, short retention | Geo-redundant backups, 30-day retention |
+| Network security | Optional bastion / jump host | Strict private endpoints, hub-spoke isolation |
+
+---
+
+## Security Practices
+
+- No hardcoded secrets, subscription IDs, or CIDRs inside modules.
+- Databases are never exposed with public IPs.
+- Secrets live in Azure Key Vault and are accessed through Managed Identity.
+- State files are stored remotely and excluded from Git via `.gitignore`.
+
+---
+
+## Contributing
+
+1. Fork the repo and create a feature branch.
+2. Run `terraform fmt -recursive` before committing.
+3. Make sure `terraform validate` passes in both `env/dev` and `env/prod`.
+4. Keep modules fully parameterized.
+5. Open a pull request with a clear description of the change.
+
+---
+
+## License
+
+Distributed under the **MPL-2.0** License. See [LICENSE](LICENSE) for details.
+
+---
+
+## Author
+
+**Ayush Agrawal**: DevOps / DevSecOps Engineer
+[Email](mailto:architectayush3@gmail.com) · [GitHub](https://github.com/architectayush3-stack)
